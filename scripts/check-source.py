@@ -21,7 +21,7 @@ for path in swift_files:
 
 with (root / "MomentCamera/Info.plist").open("rb") as stream:
     info = plistlib.load(stream)
-for key in ("NSCameraUsageDescription", "NSMicrophoneUsageDescription", "NSPhotoLibraryAddUsageDescription"):
+for key in ("NSCameraUsageDescription", "NSMicrophoneUsageDescription", "NSPhotoLibraryAddUsageDescription", "NSLocationWhenInUseUsageDescription"):
     if not info.get(key):
         errors.append(f"Missing permission description: {key}")
 

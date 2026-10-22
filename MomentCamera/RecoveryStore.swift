@@ -1,6 +1,6 @@
 import Foundation
 
-/// Durable local copies survive app restarts when Photos rejects a save.
+/// Fallback files survive failed library imports; older versions used this for Photos failures.
 struct RecoveryStore: Sendable {
     let directory: URL
 

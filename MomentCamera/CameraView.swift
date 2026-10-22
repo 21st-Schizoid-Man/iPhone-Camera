@@ -2,11 +2,19 @@ import AVFoundation
 import SwiftUI
 
 struct CameraView: View {
-    @StateObject private var model = CameraViewModel()
+    @StateObject private var model: CameraViewModel
+    @StateObject private var library: CaptureLibrary
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
     @State private var showingManualControls = false
-    @State private var showingRecovery = false
+    @State private var showingAlbum = false
+    @State private var showingLocation = false
+
+    init() {
+        let library = CaptureLibrary()
+        _library = StateObject(wrappedValue: library)
+        _model = StateObject(wrappedValue: CameraViewModel(library: library))
+    }
 
     var body: some View {
         ZStack {
@@ -51,10 +59,16 @@ struct CameraView: View {
         .sheet(isPresented: $showingManualControls) {
             ManualControls(model: model).presentationDetents([.medium, .large])
         }
-        .sheet(isPresented: $showingRecovery) {
-            RecoveryView(model: model)
+        .sheet(isPresented: $showingLocation) {
+            CityCaptureSettings(provider: model.cityLocation).presentationDetents([.medium, .large])
         }
-        .task { await model.activate() }
+        .fullScreenCover(isPresented: $showingAlbum, onDismiss: {
+            model.setBrowsingAlbum(false)
+            Task { await model.activate() }
+        }) {
+            AlbumView(library: library)
+        }
+        .task { await library.migrateLegacy(); await model.activate() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await model.activate() } }
             else if phase == .background { model.deactivate() }
@@ -76,10 +90,12 @@ struct CameraView: View {
 
     private var header: some View {
         HStack {
-            Text("拾光").font(.system(size: 22, weight: .semibold, design: .serif))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("拾光").font(.system(size: 22, weight: .semibold, design: .serif))
+                Text("MOMENT CAMERA").font(.system(size: 8, design: .monospaced)).tracking(2).foregroundStyle(.secondary)
+            }
             Spacer()
-            Text("每一刻，都值得留下").font(.caption).foregroundStyle(.secondary)
-            Spacer()
+            CityCaptureButton(provider: model.cityLocation) { showingLocation = true }
             Button { showingManualControls = true } label: {
                 Image(systemName: "slider.horizontal.3").frame(width: 44, height: 44)
             }
@@ -114,17 +130,29 @@ struct CameraView: View {
                 }
             }
             HStack {
-                if model.recoveries.isEmpty {
-                    Image(systemName: "lock.shield")
-                        .font(.title3).foregroundStyle(.secondary).frame(width: 56, height: 56)
-                        .accessibilityLabel("本应用不上传照片和视频")
-                } else {
-                    Button { showingRecovery = true } label: {
-                        Image(systemName: "tray.and.arrow.down.fill").font(.title3).frame(width: 56, height: 56)
+                Button {
+                    model.setBrowsingAlbum(true)
+                    showingAlbum = true
+                } label: {
+                    ZStack(alignment: .topTrailing) {
+                        ZStack {
+                            if let latest = library.records.first, latest.isDeveloped {
+                                LibraryThumbnail(url: library.thumbnailURL(latest))
+                            } else {
+                                Color(white: 0.10)
+                                Image(systemName: "photo.stack").font(.title3).foregroundStyle(.white)
+                            }
+                        }
+                        .frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.5), lineWidth: 1))
+                        if !library.undeveloped.isEmpty {
+                            Text("\(library.undeveloped.count)").font(.system(size: 10, weight: .bold)).foregroundStyle(.black)
+                                .padding(5).background(.yellow, in: Circle()).offset(x: 6, y: -6)
+                        }
                     }
-                    .accessibilityLabel("待保存拍摄，\(model.recoveries.count) 项")
-                    .disabled(model.isRecording || model.isBusy)
                 }
+                .accessibilityLabel("打开 App 相册，\(library.records.count) 件作品，\(library.undeveloped.count) 张待显影")
+                .disabled(model.isRecording || model.isBusy)
                 Spacer()
                 Button { Task { await model.capture() } } label: {
                     ZStack {
@@ -151,7 +179,7 @@ struct CameraView: View {
             }
             Text(model.mode == .photo && model.style != .normal
                  ? "胶片风格用于成片 · 取景器显示原始画面"
-                 : "保存至系统相册 · 无需注册")
+                 : "先收入 App 相册 · 由你决定是否导出")
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(.horizontal, 30).padding(.top, 22).padding(.bottom, 20)

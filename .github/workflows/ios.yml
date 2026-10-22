@@ -2,7 +2,17 @@ name: iOS build and image tests
 
 on:
   push:
+    paths:
+      - 'MomentCamera/**'
+      - 'MomentCameraTests/**'
+      - 'MomentCamera.xcodeproj/**'
+      - '.github/workflows/ios.yml'
   pull_request:
+    paths:
+      - 'MomentCamera/**'
+      - 'MomentCameraTests/**'
+      - 'MomentCamera.xcodeproj/**'
+      - '.github/workflows/ios.yml'
   workflow_dispatch:
 
 permissions:
@@ -35,15 +45,32 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as stream:
               stream.write('SIMULATOR_UDID=' + candidates[-1]['udid'] + '\n')
           PY
-      - name: Test full-resolution film rendering and image orientation
+      - name: Test library persistence, film rendering and frame/watermark export
         run: >-
           xcodebuild -project MomentCamera.xcodeproj -scheme MomentCamera
           -configuration Debug -destination "platform=iOS Simulator,id=$SIMULATOR_UDID"
           -derivedDataPath build/DerivedData -resultBundlePath build/CameraTests.xcresult
           CODE_SIGNING_ALLOWED=NO test
+      - name: Publish XCTest counts and reject an empty test run
+        if: always()
+        run: |
+          xcrun xcresulttool get test-results summary --path build/CameraTests.xcresult > build/test-summary.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          summary = json.loads(Path('build/test-summary.json').read_text())
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
+              stream.write('## XCTest results\n\n```json\n' + json.dumps(summary, ensure_ascii=False, indent=2) + '\n```\n')
+          if summary.get('totalTestCount', 0) <= 0:
+              raise SystemExit('No executed tests were reported')
+          if summary.get('failedTests', 0) > 0:
+              raise SystemExit('XCTest reported failures')
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: camera-test-results
-          path: build/CameraTests.xcresult
+          path: |
+            build/CameraTests.xcresult
+            build/test-summary.json
           if-no-files-found: ignore
