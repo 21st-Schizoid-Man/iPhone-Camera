@@ -51,7 +51,7 @@ xcodebuild -project MomentCamera.xcodeproj -scheme MomentCamera \
   CODE_SIGNING_ALLOWED=NO test
 ```
 
-也可以在 Xcode 中选择模拟器后按 Command-U。当前有 17 个 XCTest 用例，覆盖原片不变、胶片渲染、方向与 EXIF、App 相册重启读取、显影和装饰状态持久化、损坏记录隔离、导入失败保留源文件、旧版导入幂等性、水印字段与时区、四个边缘的实际水印绘制、相框保留照片与预览/导出比例一致性。
+也可以在 Xcode 中选择模拟器后按 Command-U。当前有 18 个 XCTest 用例，覆盖原片不变、胶片渲染、方向与 EXIF、App 相册重启读取、显影和装饰状态持久化、损坏记录隔离、导入失败保留源文件、旧版导入幂等性、水印字段与时区、四个边缘的实际水印绘制、像素采样方向校验、相框保留照片与预览/导出比例一致性。
 
 `.github/workflows/ios.yml` 配置了 macOS 上的模拟器构建和这些测试，并发布当前运行的测试计数，拒绝零测试通过。推送相关代码后执行；此工作流不包含签名或 TestFlight 上传。
 

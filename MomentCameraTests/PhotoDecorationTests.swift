@@ -83,6 +83,24 @@ final class PhotoDecorationTests: XCTestCase {
         XCTAssertEqual(Double(full.width) / Double(full.height), Double(preview.width) / Double(preview.height), accuracy: 0.015)
     }
 
+    func testPixelSamplingUsesTheImageTopLeftCoordinates() throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 100), format: format).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 100, height: 50))
+        }
+        let data = try XCTUnwrap(image.jpegData(compressionQuality: 1))
+        let top = try color(data, x: 50, y: 10)
+        let bottom = try color(data, x: 50, y: 90)
+        XCTAssertGreaterThan(top.red, 0.9)
+        XCTAssertGreaterThan(top.green, 0.9)
+        XCTAssertLessThan(bottom.red, 0.1)
+        XCTAssertLessThan(bottom.green, 0.1)
+    }
+
     private func inputPhoto() throws -> Data {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
@@ -101,8 +119,8 @@ final class PhotoDecorationTests: XCTestCase {
                                                 bitsPerComponent: 8, bytesPerRow: image.width * 4,
                                                 space: CGColorSpaceCreateDeviceRGB(),
                                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-            context.translateBy(x: 0, y: CGFloat(image.height))
-            context.scaleBy(x: 1, y: -1)
+            // Drawing a CGImage directly preserves its bitmap row order. A UIKit-style
+            // Y transform here would invert the sampled top/bottom edges a second time.
             context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         }
         return (bytes, image.width, image.height)

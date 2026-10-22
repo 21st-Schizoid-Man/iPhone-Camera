@@ -65,6 +65,8 @@ struct AlbumView: View {
                 guard !prepared else { return }
                 prepared = true
                 await library.migrateLegacy()
+                // Let the album's own presentation finish before presenting the darkroom.
+                try? await Task.sleep(for: .milliseconds(400))
                 guard !Task.isCancelled else { return }
                 if !library.undeveloped.isEmpty { batch = DevelopmentBatch(records: library.undeveloped) }
             }
