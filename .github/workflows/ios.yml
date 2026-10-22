@@ -46,24 +46,50 @@ jobs:
               stream.write('SIMULATOR_UDID=' + candidates[-1]['udid'] + '\n')
           PY
       - name: Test library persistence, film rendering and frame/watermark export
-        run: >-
-          xcodebuild -project MomentCamera.xcodeproj -scheme MomentCamera
-          -configuration Debug -destination "platform=iOS Simulator,id=$SIMULATOR_UDID"
-          -derivedDataPath build/DerivedData -resultBundlePath build/CameraTests.xcresult
-          CODE_SIGNING_ALLOWED=NO test
+        run: |
+          set -o pipefail
+          xcodebuild -project MomentCamera.xcodeproj -scheme MomentCamera \
+            -configuration Debug -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+            -derivedDataPath build/DerivedData -resultBundlePath build/CameraTests.xcresult \
+            CODE_SIGNING_ALLOWED=NO test 2>&1 | tee build/test.log
+      - name: Publish failing compiler and test diagnostics
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          log = Path('build/test.log')
+          if log.exists():
+              matches = [line for line in log.read_text(errors='replace').splitlines()
+                         if re.search(r'error:|XCTAssert.*failed|Assertion Failure|Test Case .*failed', line)]
+              for line in matches[:20]:
+                  escaped = line.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print('::error title=iOS test diagnostic::' + escaped[:1800])
+          PY
       - name: Publish XCTest counts and reject an empty test run
         if: always()
         run: |
-          xcrun xcresulttool get test-results summary --path build/CameraTests.xcresult > build/test-summary.json
           python3 - <<'PY'
-          import json, os
+          import json, os, subprocess
           from pathlib import Path
-          summary = json.loads(Path('build/test-summary.json').read_text())
+          result = subprocess.run(['xcrun', 'xcresulttool', 'get', 'test-results', 'summary',
+                                   '--path', 'build/CameraTests.xcresult'], capture_output=True, text=True)
+          if result.returncode:
+              message = result.stderr.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print('::error title=XCTest summary unavailable::' + message[:1500])
+              raise SystemExit(result.returncode)
+          summary = json.loads(result.stdout)
+          Path('build/test-summary.json').write_text(result.stdout)
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
               stream.write('## XCTest results\n\n```json\n' + json.dumps(summary, ensure_ascii=False, indent=2) + '\n```\n')
-          if summary.get('totalTestCount', 0) <= 0:
+          counts = {name: summary.get(name, 0) for name in ('totalTestCount', 'passedTests', 'failedTests', 'skippedTests')}
+          print('::notice title=XCTest counts::' + json.dumps(counts))
+          for failure in summary.get('testFailures', [])[:15]:
+              message = json.dumps(failure, ensure_ascii=False).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print('::error title=XCTest failure::' + message[:1800])
+          if counts['passedTests'] + counts['failedTests'] <= 0:
               raise SystemExit('No executed tests were reported')
-          if summary.get('failedTests', 0) > 0:
+          if counts['failedTests'] > 0:
               raise SystemExit('XCTest reported failures')
           PY
       - uses: actions/upload-artifact@v4
@@ -73,4 +99,5 @@ jobs:
           path: |
             build/CameraTests.xcresult
             build/test-summary.json
+            build/test.log
           if-no-files-found: ignore
